@@ -7,7 +7,23 @@ namespace FFmpeg.AutoGen.Example
 {
     internal class Program
     {
-        private static unsafe void Main(string[] args)
+
+        private static void Main(string[] args)
+        {
+            WorkingExample.video_encode_example(
+               @"ThisIsATest.h264",
+               (int)AVCodecID.AV_CODEC_ID_H264);
+
+            //var encoder = new WorkInProgress();
+            //encoder.video_encode_example(
+            //    @"ThisIsATest.h264",
+            //    (int)AVCodecID.AV_CODEC_ID_H264);
+
+            Console.ReadKey();
+        }
+
+
+        private static unsafe void MainEx(string[] args)
         {
             Console.WriteLine(@"Current directory: " + Environment.CurrentDirectory);
             Console.WriteLine(@"Runnung in {0}-bit mode.", Environment.Is64BitProcess ? @"64" : @"32");
