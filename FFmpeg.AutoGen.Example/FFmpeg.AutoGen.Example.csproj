@@ -95,17 +95,22 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Xaml" />
     <Reference Include="WindowsBase" />
     <Reference Include="WriteableBitmapEx.Wpf, Version=1.5.0.0, Culture=neutral, PublicKeyToken=50375ca6144f1c69, processorArchitecture=MSIL">
       <HintPath>..\packages\WriteableBitmapEx.1.5.1.0\lib\net40\WriteableBitmapEx.Wpf.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="WorkInProgress.cs" />
+    <Compile Include="BitmapExtension.cs" />
+    <Compile Include="EncodeMultipleBitmaps.cs" />
+    <Compile Include="EncodeMultipleBitmapsRgbaToYuv.cs" />
     <Compile Include="InteropHelper.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="WorkingExample.cs" />
+    <Compile Include="EncodeSingleBitmap.cs" />
+    <Compile Include="Rgb.cs" />
+    <Compile Include="Yuv.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FFmpeg.AutoGen\FFmpeg.AutoGen.csproj">

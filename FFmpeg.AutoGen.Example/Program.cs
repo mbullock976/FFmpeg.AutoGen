@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -7,24 +8,41 @@ namespace FFmpeg.AutoGen.Example
 {
     internal class Program
     {
-
         private static void Main(string[] args)
         {
-            WorkingExample.video_encode_example(
-               @"ThisIsATest.h264",
-               (int)AVCodecID.AV_CODEC_ID_H264);
+            //EncodeSingleBitmap.video_encode_example(
+            //   @"ThisIsATest.h264",
+            //   (int)AVCodecID.AV_CODEC_ID_H264);
 
-            //var encoder = new WorkInProgress();
-            //encoder.video_encode_example(
-            //    @"ThisIsATest.h264",
-            //    (int)AVCodecID.AV_CODEC_ID_H264);
+            var encoder = new EncodeMultipleBitmapsRgbaToYuv();
+            encoder.video_encode_example(
+                @"ThisIsATest.h264",
+                (int)AVCodecID.AV_CODEC_ID_H264);
 
             Console.ReadKey();
         }
 
 
-        private static unsafe void MainEx(string[] args)
+        //private static unsafe void Main(string[] args)
+        //{
+        //    Console.WriteLine("Decoding video...");
+        //    var frames = DecodeVideo();
+        //    Console.WriteLine("Decoded video successfully.");
+
+        //    //Console.WriteLine("Encoding frames...");
+        //    //var encoder = new EncodeMultipleBitmaps();
+        //    //encoder.video_encode_example(
+        //    //    @"ThisIsATest.h264",
+        //    //    (int)AVCodecID.AV_CODEC_ID_H264);
+
+        //    //Console.WriteLine("Encoded frames successfully...");
+
+        //}
+
+        private static unsafe List<Bitmap> DecodeVideo()
         {
+            List<Bitmap> bitmaps = new List<Bitmap>();
+
             Console.WriteLine(@"Current directory: " + Environment.CurrentDirectory);
             Console.WriteLine(@"Runnung in {0}-bit mode.", Environment.Is64BitProcess ? @"64" : @"32");
 
@@ -43,7 +61,7 @@ namespace FFmpeg.AutoGen.Example
                     InteropHelper.RegisterLibrariesSearchPath(libraryPath);
                     break;
             }
-            
+
             ffmpeg.av_register_all();
             ffmpeg.avcodec_register_all();
             ffmpeg.avformat_network_init();
@@ -55,12 +73,12 @@ namespace FFmpeg.AutoGen.Example
             av_log_set_callback_callback logCallback = (p0, level, format, vl) =>
             {
                 if (level > ffmpeg.av_log_get_level()) return;
-                
+
                 var lineSize = 1024;
                 var lineBuffer = stackalloc byte[lineSize];
                 var printPrefix = 1;
                 ffmpeg.av_log_format_line(p0, level, format, vl, lineBuffer, lineSize, &printPrefix);
-                var line = Marshal.PtrToStringAnsi((IntPtr) lineBuffer);
+                var line = Marshal.PtrToStringAnsi((IntPtr)lineBuffer);
                 Console.Write(line);
             };
             ffmpeg.av_log_set_callback(logCallback);
@@ -132,12 +150,14 @@ namespace FFmpeg.AutoGen.Example
             ffmpeg.av_init_packet(pPacket);
 
             var frameNumber = 0;
-            while (frameNumber < 200)
+            //while (frameNumber < 200)
+            while (true)
             {
                 try
                 {
                     if (ffmpeg.av_read_frame(pFormatContext, pPacket) < 0)
-                        throw new ApplicationException(@"Could not read frame");
+                        //throw new ApplicationException(@"Could not read frame");
+                        break;
 
                     if (pPacket->stream_index != pStream->index)
                         continue;
@@ -158,10 +178,13 @@ namespace FFmpeg.AutoGen.Example
                     ffmpeg.av_frame_unref(pDecodedFrame);
                 }
 
-                var convertedFrameBufferPtr = (IntPtr) convertedFrameBuffer;
+                var convertedFrameBufferPtr = (IntPtr)convertedFrameBuffer;
 
-                using (var bitmap = new Bitmap(width, height, dstLinesize[0], PixelFormat.Format24bppRgb, convertedFrameBufferPtr))
-                    bitmap.Save(@"frame.buffer.jpg", ImageFormat.Jpeg);
+                using (var bitmap = new Bitmap(width, height, dstLinesize[0], PixelFormat.Format24bppRgb,
+                    convertedFrameBufferPtr))
+                {
+                    bitmap.Save($@"frame.buffer{frameNumber}.jpg", ImageFormat.Jpeg);
+                }
 
                 frameNumber++;
             }
@@ -172,6 +195,8 @@ namespace FFmpeg.AutoGen.Example
             ffmpeg.av_free(pDecodedFrame);
             ffmpeg.avcodec_close(pCodecContext);
             ffmpeg.avformat_close_input(&pFormatContext);
+
+            return bitmaps;
         }
     }
 }

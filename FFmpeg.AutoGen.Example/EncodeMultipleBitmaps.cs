@@ -1,39 +1,65 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Point = System.Windows.Point;
 
 namespace FFmpeg.AutoGen.Example
 {
     /// <summary>
-    /// To extend WorkingExample class so that this takes a bitmap file, applies markup (formatted text), then converts rgba32 pixel data to yuv420p
+    /// To extend EncodeSingleBitmap class so that this takes a bitmap file, applies markup (formatted text), then converts rgba32 pixel data to yuv420p
     /// then apply swscale, then encode with h264 codec
     /// </summary>
-    public class WorkInProgress
+    public class EncodeMultipleBitmaps
     {
         private const int EAGAIN = 11;
-
         private const int AVERROR_EAGAIN = -EAGAIN;
-
         private const int AVERROR_EOF = -0x20464F45;
-        private readonly WriteableBitmap _wb;
-        private byte[] _managedBitmapArray;
 
-        public WorkInProgress()
+        private readonly List<BitmapSource> _decodedBitmaps = new List<BitmapSource>();
+
+        public EncodeMultipleBitmaps()
         {
-            BitmapSource bs =
-                new BitmapImage(new Uri(
-                    @"C:\FFmpeg_AutoGenCSharp_repo\FFmpeg.AutoGen.Example\bin\Debug\frame.buffer0.jpg"));
-            _wb = new WriteableBitmap(bs);
-            _managedBitmapArray = GetBitmapData();
+            LoadBitmapsFromDisk();
+        }
+
+        private void LoadBitmapsFromDisk()
+        {
+            for (int i = 0; i < 1439; i++)
+            {
+                BitmapSource bs =
+                    new BitmapImage(new Uri(
+                        $@"C:\RgbaToH264\FFmpeg.AutoGen.Example\bin\x64\Debug\frame.buffer{i}.jpg"));
+                _decodedBitmaps.Add(bs);
+            }
         }
 
         public unsafe void video_encode_example(
-            string filename,
+            string outputFilename,
             int codec_id)
         {
+
+            // register path to ffmpeg
+            switch (Environment.OSVersion.Platform)
+            {
+                case PlatformID.Win32NT:
+                case PlatformID.Win32S:
+                case PlatformID.Win32Windows:
+                    var ffmpegPath = $@"../../../../FFmpeg/bin/{(Environment.Is64BitProcess ? @"x64" : @"x86")}";
+                    InteropHelper.RegisterLibrariesSearchPath(ffmpegPath);
+                    break;
+                case PlatformID.Unix:
+                case PlatformID.MacOSX:
+                    var libraryPath = Environment.GetEnvironmentVariable(InteropHelper.LD_LIBRARY_PATH);
+                    InteropHelper.RegisterLibrariesSearchPath(libraryPath);
+                    break;
+            }
+
             ffmpeg.av_register_all();
             ffmpeg.avcodec_register_all();
             ffmpeg.avformat_network_init();
@@ -55,7 +81,7 @@ namespace FFmpeg.AutoGen.Example
 
 
             //find the h264 video encoder
-            codec = ffmpeg.avcodec_find_encoder((AVCodecID) codec_id);
+            codec = ffmpeg.avcodec_find_encoder((AVCodecID)codec_id);
             if (codec == null)
                 throw new ApplicationException(@"Unsupported codec");
 
@@ -66,10 +92,10 @@ namespace FFmpeg.AutoGen.Example
             /* put sample parameters */
             c->bit_rate = 400000;
             /* resolution must be a multiple of two */
-            c->width = (int) _wb.Width; //352;
-            c->height = (int) _wb.Height; //288;
+            c->width = 640;
+            c->height = 360;
             /* frames per second */
-            c->time_base = new AVRational {num = 1, den = 25};
+            c->time_base = new AVRational { num = 1, den = 25 };
 
 
             /* emit one intra frame every ten frames 
@@ -82,25 +108,25 @@ namespace FFmpeg.AutoGen.Example
             c->max_b_frames = 1;
             c->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
 
-            if ((AVCodecID) codec_id == AVCodecID.AV_CODEC_ID_H264)
+            if ((AVCodecID)codec_id == AVCodecID.AV_CODEC_ID_H264)
                 ffmpeg.av_opt_set(c->priv_data, "preset", "slow", 0);
 
             /* open it */
             if (ffmpeg.avcodec_open2(c, codec, null) < 0)
                 throw new ApplicationException("Could not open codec\n");
 
-            if (File.Exists(filename))
-                File.Delete(filename);
+            if (File.Exists(outputFilename))
+                File.Delete(outputFilename);
 
-            var fileStream = File.Open(filename, FileMode.OpenOrCreate);
+            var fileStream = File.Open(outputFilename, FileMode.OpenOrCreate);
             if (fileStream == null)
-                throw new ApplicationException($"Could not open {filename}\n");
+                throw new ApplicationException($"Could not open {outputFilename}\n");
 
             frame = ffmpeg.av_frame_alloc();
             if (frame == null)
                 throw new ApplicationException($"Could not allocate video frame\n");
 
-            frame->format = (int) c->pix_fmt;
+            frame->format = (int)c->pix_fmt;
             frame->width = c->width;
             frame->height = c->height;
 
@@ -137,7 +163,7 @@ namespace FFmpeg.AutoGen.Example
             //    http://stackoverflow.com/questions/16667687/how-to-convert-rgb-from-yuv420p-for-ffmpeg-encoder 
             // 
             // Create some dummy RGB "frame" 
-            byte* rgba32Data = stackalloc byte[4 * c->width * c->height];
+            byte* unmanagedRgba32Array = stackalloc byte[4 * c->width * c->height];
 
 
             var ctx = ffmpeg.sws_getContext(
@@ -147,16 +173,18 @@ namespace FFmpeg.AutoGen.Example
                 c->width,
                 c->height,
                 AVPixelFormat.AV_PIX_FMT_YUV420P,
-                0,
-                (SwsFilter*) 0,
-                (SwsFilter*) 0,
-                (double*) 0);
+                ffmpeg.SWS_FAST_BILINEAR,
+                (SwsFilter*)0,
+                (SwsFilter*)0,
+                (double*)0);
 
 
             pkt = ffmpeg.av_packet_alloc();
 
+            var nextframe = -1;
+
             /* encode 1 second of video */
-            for (i = 0; i < 25; i++)
+            for (i = 0; i < 1438; i++)
             {
                 ffmpeg.av_init_packet(pkt);
                 pkt->data = null; // packet data will be allocated by the encoder 
@@ -164,45 +192,17 @@ namespace FFmpeg.AutoGen.Example
 
                 fileStream.Flush();
 
-                //* prepare a dummy image */
-                //for (y = 0; y < c->height; y++)
-                //{
-                //    for (x = 0; x < c->width; x++)
-                //    {
-                //        frame->data[0][y * frame->linesize[0] + x] = (byte)(x + y + i * 3);
-                //    }
-                //}
+                var managedRgba32Array = ProcessBitmap(i);
 
-                ////*Cb and Cr */
-                //for (y = 0; y < c->height / 2; y++)
-                //{
-                //    for (x = 0; x < c->width / 2; x++)
-                //    {
-                //        frame->data[1][y * frame->linesize[1] + x] = (byte)(128 + y + i * 2);
-                //        frame->data[2][y * frame->linesize[2] + x] = (byte)(64 + x + i * 5);
-                //    }
-                //}
+                int size = Marshal.SizeOf(managedRgba32Array[0]) * managedRgba32Array.Length;
+                IntPtr pnt = Marshal.AllocHGlobal(size);
+                Marshal.Copy(managedRgba32Array, 0, pnt, managedRgba32Array.Length);
 
-
-                var pos = rgba32Data;
-                for (y = 0; y < c->height; y++)
-                for (x = 0; x < c->width; x++)
-                {
-                    pos[0] = (byte) (i / (float) 25 * 255);
-                    pos[1] = 0;
-                    pos[2] = (byte) (x / (float) c->width * 255);
-                    pos[3] = 255;
-                    pos += 4;
-                }
-
-                //int size = Marshal.SizeOf(_managedBitmapArray[0]) * _managedBitmapArray.Length;
-                //IntPtr pnt = Marshal.AllocHGlobal(size);
-                //Marshal.Copy(_managedBitmapArray, 0, pnt, _managedBitmapArray.Length);
-
-                //rgba32Data = (byte*)pnt;
+                unmanagedRgba32Array = (byte*)pnt;
 
                 var inData = new byte*[1];
-                inData[0] = rgba32Data;
+                inData[0] = unmanagedRgba32Array;
+
 
                 // NOTE: In a more general setting, the rows of your input image may 
                 //       be padded; that is, the bytes per row may not be 4 * width. 
@@ -214,7 +214,7 @@ namespace FFmpeg.AutoGen.Example
 
                 ffmpeg.sws_scale(ctx, inData, inLineSize, 0, c->height, frame->data, frame->linesize);
 
-                //Marshal.FreeHGlobal(pnt);
+                Marshal.FreeHGlobal(pnt);
 
                 frame->pts = i;
 
@@ -228,7 +228,6 @@ namespace FFmpeg.AutoGen.Example
             /* add sequence end code to have a real MPEG file */
             fileStream.Write(endcode, 0, endcode.Length);
             fileStream.Close();
-
 
             ffmpeg.avcodec_free_context(&c);
             ffmpeg.av_frame_free(&frame);
@@ -264,9 +263,20 @@ namespace FFmpeg.AutoGen.Example
             }
         }
 
-        private byte[] GetBitmapData()
+        private byte[] ProcessBitmap(int frameNumber)
         {
-            var frameSupplementText = new FormattedText(DateTime.Now.ToString("HH:mm:ss"),
+            var wb = new WriteableBitmap(_decodedBitmaps[frameNumber]);
+
+            ApplyMarkup(ref wb);
+
+            var rgbaData = ConvertToRgba32(ref wb);
+
+            return rgbaData;
+        }
+
+        private void ApplyMarkup(ref WriteableBitmap wb)
+        {
+            var frameSupplementText = new FormattedText(DateTime.Now.ToString("HH:mm:ss:fff"),
                 new CultureInfo("en-us"),
                 FlowDirection.LeftToRight,
                 new Typeface("Arial"),
@@ -281,22 +291,47 @@ namespace FFmpeg.AutoGen.Example
             var renderTargetBitmap = new RenderTargetBitmap(100, 30, 96, 96, PixelFormats.Pbgra32);
             renderTargetBitmap.Render(captionVisual);
 
-            _wb.Blit(new Rect(50, 10, 150, 30), new WriteableBitmap(renderTargetBitmap),
+            wb.Blit(new Rect(50, 10, 150, 30), new WriteableBitmap(renderTargetBitmap),
                 new Rect(0, 0, 100, 30));
-
-            return AddProcessedImage(_wb);
         }
 
-        private static byte[] AddProcessedImage(WriteableBitmap image)
+        private byte[] ConvertToRgba32(ref WriteableBitmap wb)
         {
-            using (var saveStream = new MemoryStream())
-            {
-                var encoder = new JpegBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(image));
-                encoder.Save(saveStream);
-                saveStream.Seek(0, SeekOrigin.Begin);
-                return saveStream.ToArray();
-            }
+            Bitmap bmp = BitmapFromWriteableBitmap(wb);
+
+            Rectangle rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
+            System.Drawing.Imaging.BitmapData bmpData =
+                bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite,
+                    bmp.PixelFormat);
+
+            // Get the address of the first line.
+            IntPtr ptr = bmpData.Scan0;
+
+            // Declare an array to hold the bytes of the bitmap.
+            int bytes = bmpData.Stride * bmp.Height;
+            byte[] rgbValues = new byte[bytes];
+
+            // Copy the RGB values into the array.
+            System.Runtime.InteropServices.Marshal.Copy(ptr, rgbValues, 0, bytes);
+
+            // unlock the bitmap bufer
+            bmp.UnlockBits(bmpData);
+
+            return rgbValues;
         }
+
+        private System.Drawing.Bitmap BitmapFromWriteableBitmap(WriteableBitmap writeBmp)
+        {
+            System.Drawing.Bitmap bmp;
+            using (MemoryStream outStream = new MemoryStream())
+            {
+                BitmapEncoder enc = new BmpBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create((BitmapSource)writeBmp));
+                enc.Save(outStream);
+                bmp = new System.Drawing.Bitmap(outStream);
+            }
+            return bmp;
+        }
+
     }
 }

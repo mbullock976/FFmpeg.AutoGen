@@ -3,7 +3,7 @@ using System.IO;
 
 namespace FFmpeg.AutoGen.Example
 {
-    public class WorkingExample
+    public class EncodeSingleBitmap
     {
         /// <summary>
         ///     Taken from https://github.com/codefromabove/FFmpegRGBAToYUV/blob/master/FFmpegRGBAToYUV/ConvertRGBA.cpp
