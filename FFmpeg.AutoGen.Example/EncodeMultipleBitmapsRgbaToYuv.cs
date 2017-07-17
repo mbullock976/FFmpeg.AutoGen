@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -9,7 +8,6 @@ using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using PixelFormat = System.Windows.Media.PixelFormat;
 using Point = System.Windows.Point;
 
 namespace FFmpeg.AutoGen.Example
@@ -106,7 +104,7 @@ namespace FFmpeg.AutoGen.Example
              */
             c->gop_size = 10;
             c->max_b_frames = 1;
-            c->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV422P;
+            c->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
 
             if ((AVCodecID)codec_id == AVCodecID.AV_CODEC_ID_H264)
                 ffmpeg.av_opt_set(c->priv_data, "preset", "slow", 0);
@@ -163,25 +161,23 @@ namespace FFmpeg.AutoGen.Example
             //    http://stackoverflow.com/questions/16667687/how-to-convert-rgb-from-yuv420p-for-ffmpeg-encoder 
             // 
             // Create some dummy RGB "frame" 
-            byte* unmanagedRgba32Array = stackalloc byte[4 * c->width * c->height];
+            byte* unmanagedRgba32Array = stackalloc byte[3 * c->width * c->height];
 
 
             var ctx = ffmpeg.sws_getContext(
                 c->width,
                 c->height,
-                AVPixelFormat.AV_PIX_FMT_RGBA,
+                AVPixelFormat.AV_PIX_FMT_BGR24,
                 c->width,
                 c->height,
-                AVPixelFormat.AV_PIX_FMT_YUV422P,
-                ffmpeg.SWS_LANCZOS | ffmpeg.SWS_ACCURATE_RND,
+                AVPixelFormat.AV_PIX_FMT_YUV420P,
+                ffmpeg.SWS_FAST_BILINEAR,
                 null,
                 null,
                 null);
 
 
-            pkt = ffmpeg.av_packet_alloc();
-
-            var nextframe = -1;
+            pkt = ffmpeg.av_packet_alloc();            
 
             /* encode 1 second of video */
             for (i = 0; i < 1438; i++)
@@ -210,7 +206,7 @@ namespace FFmpeg.AutoGen.Example
                 // 
                 //int inLinesize[1] = { 4 * c->width }; // RGBA stride
                 var inLineSize = new int[1];
-                inLineSize[0] = 4 * c->width;
+                inLineSize[0] = 3 * c->width;
 
                 ffmpeg.sws_scale(ctx, inData, inLineSize, 0, c->height, frame->data, frame->linesize);
 
@@ -270,10 +266,6 @@ namespace FFmpeg.AutoGen.Example
             ApplyMarkup(ref wb);
 
             var rgba32Data = ConvertToRgba32(ref wb);
-
-            //var rgb24Data = ConvertToRgba24(_decodedBitmaps[frameNumber]);
-            //return rgb24Data;
-
             return rgba32Data;
         }
 
@@ -296,8 +288,7 @@ namespace FFmpeg.AutoGen.Example
 
             var frameDiagnosticsTextWidth = (int)frameSupplementText.Width;
             var frameDiagnosticsTextHeight = (int)frameSupplementText.Height;
-            var backgroundBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 0, 255)) { Opacity = 0.5 };
-
+            var backgroundBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(54, 109, 145)) { Opacity = 0.5 };
 
             var frameDiagBackgroundRect = new Rect(
                 new Point(0, 0),
@@ -322,7 +313,6 @@ namespace FFmpeg.AutoGen.Example
 
             wb.Blit(new Rect(10, 10, 150, 130), new WriteableBitmap(frameDiagRenderTargetBitmap),
                 new Rect(0, 0, 100, 130));
-
         }
 
         private byte[] ConvertToRgba32(ref WriteableBitmap wb)
@@ -332,7 +322,7 @@ namespace FFmpeg.AutoGen.Example
             Rectangle rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
             System.Drawing.Imaging.BitmapData bmpData =
                 bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite,
-                    bmp.PixelFormat);
+                    System.Drawing.Imaging.PixelFormat.Format24bppRgb);
 
             // Get the address of the first line.
             IntPtr ptr = bmpData.Scan0;
@@ -348,51 +338,7 @@ namespace FFmpeg.AutoGen.Example
             bmp.UnlockBits(bmpData);
 
             return rgbValues;
-        }
-
-        private byte[] ConvertToRgba24(BitmapSource source)
-        {
-            Bitmap bmp = GetBitmap(source);
-
-            Rectangle rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
-            System.Drawing.Imaging.BitmapData bmpData =
-                bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite,
-                    bmp.PixelFormat);
-
-            // Get the address of the first line.
-            IntPtr ptr = bmpData.Scan0;
-
-            // Declare an array to hold the bytes of the bitmap.
-            int bytes = bmpData.Stride * bmp.Height;
-            byte[] rgbValues = new byte[bytes];
-
-            // Copy the RGB values into the array.
-            System.Runtime.InteropServices.Marshal.Copy(ptr, rgbValues, 0, bytes);
-
-            // unlock the bitmap bufer
-            bmp.UnlockBits(bmpData);
-
-            return rgbValues;
-        }
-
-        Bitmap GetBitmap(BitmapSource source)
-        {
-            Bitmap bmp = new Bitmap(
-                source.PixelWidth,
-                source.PixelHeight,
-                System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-            BitmapData data = bmp.LockBits(
-                new Rectangle(System.Drawing.Point.Empty, bmp.Size),
-                ImageLockMode.WriteOnly,
-                System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-            source.CopyPixels(
-                Int32Rect.Empty,
-                data.Scan0,
-                data.Height * data.Stride,
-                data.Stride);
-            bmp.UnlockBits(data);
-            return bmp;
-        }
+        }                
 
         private System.Drawing.Bitmap BitmapFromWriteableBitmap(WriteableBitmap writeBmp)
         {
@@ -407,13 +353,23 @@ namespace FFmpeg.AutoGen.Example
             return bmp;
         }
 
-        public static Yuv RgbtoYuv(Rgb rgb)
-        {
-            double y = rgb.R * .299000 + rgb.G * .587000 + rgb.B * .114000;
-            double u = rgb.R * -.168736 + rgb.G * -.331264 + rgb.B * .500000 + 128;
-            double v = rgb.R * .500000 + rgb.G * -.418688 + rgb.B * -.081312 + 128;
-
-            return new Yuv(y, u, v);
-        }
+        //Bitmap GetBitmap(BitmapSource source)
+        //{
+        //    Bitmap bmp = new Bitmap(
+        //        source.PixelWidth,
+        //        source.PixelHeight,
+        //        System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        //    BitmapData data = bmp.LockBits(
+        //        new Rectangle(System.Drawing.Point.Empty, bmp.Size),
+        //        ImageLockMode.WriteOnly,
+        //        System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        //    source.CopyPixels(
+        //        Int32Rect.Empty,
+        //        data.Scan0,
+        //        data.Height * data.Stride,
+        //        data.Stride);
+        //    bmp.UnlockBits(data);
+        //    return bmp;
+        //}
     }
 }
